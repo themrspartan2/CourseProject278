@@ -23,60 +23,6 @@ struct sockaddr_in servaddr;
 socklen_t len;
 list<int> li;
 
-//check if a username is present in the database
-string lookup(string username)
-{
-    //change this to SQL query later
-    if (username == "farrarng")
-    {
-        return "qwerty";
-    }
-    else
-    {
-        cout << "User not present in database. Create account? Y/N\n";
-        return "";
-    }
-}
-
-//send a comment recieved from a user to the chat
-void postComment(string comment)
-{
-    //prepend '<username of sender>: ' to 'comment'
-    //send 'comment' to all clients
-}
-
-void login()
-{
-    string username;
-    string password;
-    bool found = false;
-    while (!found)
-    {
-        //this is just a test, not acutal code
-        cout << "Enter username: ";
-        cin >> username;
-        password = lookup(username);
-        if (password == "")
-        {
-            cout << "Username not found in the database, try again.\n";
-        }
-        else
-        {
-            found = true;
-        }
-    }
-
-    cout << "Enter password: ";
-    string input;
-    cin >> input;
-    while (input != password)
-    {
-        cout << "Password does not match, try again.\n";
-        cout << "Enter password: ";
-        cin >> input;
-    }
-}
-
 void getConn()
 {
     while (1)
@@ -89,19 +35,23 @@ void getConn()
 
 void getData()
 {
+    //server checks for message every 2 seconds
     struct timeval tv;
     tv.tv_sec = 2;
     tv.tv_usec = 0;
+
     while (1)
     {
-        std::list<int>::iterator it;
+        list<int>::iterator it;
         for (it = li.begin(); it != li.end(); ++it)
         {
+            std::cout << *it;
             fd_set rfds;
             FD_ZERO(&rfds);
             int maxfd = 0;
             int retval = 0;
             FD_SET(*it, &rfds);
+            
             if (maxfd < *it)
             {
                 maxfd = *it;
@@ -109,11 +59,11 @@ void getData()
             retval = select(maxfd + 1, &rfds, NULL, NULL, &tv);
             if (retval == -1)
             {
-                printf("select error\n");
+                printf("Socket error\n");
             }
             else if (retval == 0)
             {
-                //printf("not message\n");
+                //No messages were recieved from this connection
             }
             else
             {
@@ -121,6 +71,8 @@ void getData()
                 memset(buf, 0, sizeof(buf));
                 int len = recv(*it, buf, sizeof(buf), 0);
                 printf("%s", buf);
+                //now send it to everyone but the sender
+                //send(*it, buf, sizeof(buf), 0);
             }
         }
         sleep(1);
@@ -133,8 +85,7 @@ void sendMess()
     {
         char buf[1024];
         fgets(buf, sizeof(buf), stdin);
-        //printf("you are send %s", buf);
-        std::list<int>::iterator it;
+        list<int>::iterator it;
         for (it = li.begin(); it != li.end(); ++it)
         {
             send(*it, buf, sizeof(buf), 0);
@@ -144,12 +95,14 @@ void sendMess()
 
 int main()
 {
-    //new socket
+    //Create the socket - ipv4 internet socket, TCP
     s = socket(AF_INET, SOCK_STREAM, 0);
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(PORT);
     servaddr.sin_addr.s_addr = inet_addr(IP);
+
+    //bind the socket with error checking
     if (bind(s, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)
     {
         perror("bind");
@@ -163,15 +116,17 @@ int main()
     len = sizeof(servaddr);
 
     //thread : while ==>> accpet
-    std::thread t(getConn);
+    thread t(getConn);
     t.detach();
-    //printf("done\n");
+
     //thread : input ==>> send
-    std::thread t1(sendMess);
+    thread t1(sendMess);
     t1.detach();
+
     //thread : recv ==>> show
-    std::thread t2(getData);
+    thread t2(getData);
     t2.detach();
+    
     while (1)
     {
     }

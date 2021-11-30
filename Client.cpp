@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/shm.h>
+#include <iostream>
 
 #define MYPORT 7000
 #define BUFFER_SIZE 1024
@@ -16,6 +17,10 @@ using namespace std;
 
 int main(int argc, char const *argv[])
 {
+    string username;
+    cout << "Enter username: ";
+    cin >> username;
+
     int sock_cli;
     fd_set rfds;
     struct timeval tv;
@@ -62,13 +67,12 @@ int main(int argc, char const *argv[])
         retval = select(maxfd + 1, &rfds, NULL, NULL, &tv);
         if (retval == -1)
         {
-            printf("select Error, client program exit\n");
+            printf("Select error, exiting client program.\n");
             break;
         }
         else if (retval == 0)
         {
-            //printf("The client does not have any input information, and the server does not have any information coming. waiting...\n");
-            printf("===waiting===\n");
+            //waiting for input from the client
             continue;
         }
         else
@@ -87,6 +91,7 @@ int main(int argc, char const *argv[])
             {
                 char sendbuf[BUFFER_SIZE];
                 fgets(sendbuf, sizeof(sendbuf), stdin);
+                cout << sendbuf;
                 send(sock_cli, sendbuf, strlen(sendbuf), 0); //Send out
                 memset(sendbuf, 0, sizeof(sendbuf));
             }
