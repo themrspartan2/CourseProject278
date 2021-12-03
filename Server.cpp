@@ -37,11 +37,11 @@ mysqlpp::Connection myDB("CourseProject", "localhost", "cse278", "S3rul3z");
 // helper which determines whether the user is trying to close the program
 bool exitCheck(char buf[])
 {
-    if (buf[0] == '/' &&
+    if ((buf[0] == '/' &&
         buf[1] == 'e' &&
         buf[2] == 'x' &&
         buf[3] == 'i' &&
-        buf[4] == 't')
+        buf[4] == 't') || strcmp(buf, "") == 0)
     {
         return 1;
     }
