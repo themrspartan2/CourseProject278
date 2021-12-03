@@ -179,6 +179,37 @@ void Login()
     }
 }
 
+void directMessage(string sender, char buf[])
+{
+    int i = 1;
+    string recipient;
+    string s = buf;
+    while (!isspace(s[i]))
+    {
+        recipient = recipient + s[i];
+        i++;
+    }
+
+    // format the message and convert it back to buffer
+    size_t pos = s.find(recipient);
+    if (pos != string::npos)
+    {
+        s.erase(pos - 1, recipient.length() + 1);
+    }
+    s = "(Direct) " + sender + ": " + s;
+    memset(buf, 0, BUFFER_SIZE);
+    strcpy(buf, s.c_str());
+
+    list<pair<int, string>>::iterator it;
+    for (it = activeConn.begin(); it != activeConn.end(); ++it)
+    {
+        if (it->second == recipient)
+        {
+            send(it->first, buf, BUFFER_SIZE, 0);
+        }
+    }
+}
+
 // listens for data from clients and sends it to everyone else in the chatroom
 void getData()
 {
@@ -236,6 +267,11 @@ void getData()
                         send(it2->first, buf, BUFFER_SIZE, 0);
                     }
                 }
+                else if (buf[0] == '/')
+                {
+                    directMessage(it->second, buf);
+                    continue;
+                }
                 else
                 {
                     // convert to buffer
@@ -267,6 +303,13 @@ void serverMessage()
     {
         char buf[BUFFER_SIZE];
         fgets(buf, BUFFER_SIZE, stdin);
+
+        // exit management
+        if (exitCheck(buf))
+        {
+            exit(0);
+        }
+
         list<pair<int, string>>::iterator it;
         for (it = activeConn.begin(); it != activeConn.end(); ++it)
         {
