@@ -48,7 +48,7 @@ int main(int argc, char const *argv[])
 
     cout << "Connection established." << endl;
     cout << "Type /exit to disconnect." << endl;
-    cout << "TYpe /<username> to direct message." << endl;
+    cout << "Type /<username> to direct message." << endl;
     cout << "Enter your username: " << flush;
 
     while (1)
