@@ -34,21 +34,12 @@ void exitPrompt()
 
 int main(int argc, char const *argv[])
 {
-    //Get your username and password
-    string username, password;
-    cout << "Enter username: ";
-    cin >> username;
-    cout << "Enter password: ";
-    cin >> password;
-
+    //set up the socket
     int sock_cli;
     fd_set rfds;
     struct timeval tv;
     int retval, maxfd;
-
-    //define sockfd
     sock_cli = socket(AF_INET, SOCK_STREAM, 0);
-    //define sockaddr_in
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
@@ -63,6 +54,20 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
+    //verify login
+    //Get your username and password
+    bool loggedIn = false;
+
+    while (loggedIn == false)
+    {
+        string username, password;
+        cout << "Enter username: ";
+        cin >> username;
+        cout << "Enter password: ";
+        cin >> password;
+        loggedIn = true;
+    }
+
     cout << "Connection established." << endl
          << "Type /exit to disconnect.\n";
 
@@ -70,14 +75,11 @@ int main(int argc, char const *argv[])
     {
         //clear the collection of readable file descriptors
         FD_ZERO(&rfds);
-
         //add standard input file descriptors to the collection
         FD_SET(0, &rfds);
         maxfd = 0;
-
         //add the currently connected file descriptor to the collection
         FD_SET(sock_cli, &rfds);
-
         //find the largest file descriptor in the file descriptor set
         if (maxfd < sock_cli)
         {
@@ -117,10 +119,13 @@ int main(int argc, char const *argv[])
             {
                 char sendbuf[BUFFER_SIZE];
                 fgets(sendbuf, sizeof(sendbuf), stdin);
-                if (sendbuf[0] == 'e' &&
-                    sendbuf[1] == 'x' &&
-                    sendbuf[2] == 'i' &&
-                    sendbuf[3] == 't')
+
+                //if the message is "/exit" then end the connection
+                if (sendbuf[0] == '/' &&
+                    sendbuf[1] == 'e' &&
+                    sendbuf[2] == 'x' &&
+                    sendbuf[3] == 'i' &&
+                    sendbuf[4] == 't')
                 {
                     send(sock_cli, sendbuf, strlen(sendbuf), 0);
                     cout << "Connection terminated.\n";

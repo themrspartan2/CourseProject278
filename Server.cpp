@@ -26,15 +26,6 @@ struct sockaddr_in serverAddr;
 socklen_t length;
 list<int> activeConn;
 
-mysqlpp::StoreQueryResult sendQuery(string data)
-{
-    mysqlpp::Connection myDB("cse278", "localhost", "cse278", "S3rul3z");
-    mysqlpp::Query query = myDB.query();
-    query << data;
-    query.parse();
-    return query.store();
-}
-
 void getConnection()
 {
     while (1)
@@ -88,33 +79,33 @@ void getData()
                 //This prints the client's message on the server terminal
                 printf("%s", buf);
 
-                if (buf[0] == 'e' &&
-                    buf[1] == 'x' &&
-                    buf[2] == 'i' &&
-                    buf[3] == 't')
+                //If the message is /exit, 
+                //remove the user from the list of active connections
+                //and announce their disconnection
+                if (buf[0] == '/' &&
+                    buf[1] == 'e' &&
+                    buf[2] == 'x' &&
+                    buf[3] == 'i' &&
+                    buf[4] == 't')
                 {
                     cout << "Client #" << *it << " disconnected.\n";
                     activeConn.erase(it--);
                 }
                 else
                 {
-                    try
-                    {
-                        //This sends the client's message to the database as a query
-                        mysqlpp::StoreQueryResult result = sendQuery(buf);
-                    }
-                    catch (const std::exception &e)
-                    {
-                        //Catch an error
-                        cerr << e.what() << '\n';
-                        string temp = e.what();
-                        temp = temp + '\n';
-                        char buf[BUFFER_SIZE];
-                        strcpy(buf, temp.c_str());
+                    string s(buf);
+                    s = "Client #" + to_string(*it) + " said: " + s;
+                    strcpy(buf, s.c_str());
 
-                        //Send the error back to the user
-                        send(*it, buf, sizeof(buf), 0);
+                    //Send this to everyone but the sender
+                    list<int>::iterator it2;
+                    for (it2 = activeConn.begin(); it2 != activeConn.end(); ++it2) {
+                        if(it == it2) {
+                            continue;
+                        }
+                        send(*it2, buf, sizeof(buf), 0);
                     }
+                        
                 }
             }
         }
@@ -122,7 +113,7 @@ void getData()
     }
 }
 
-void sendToAll()
+void serverMessage()
 {
     while (1)
     {
@@ -163,7 +154,7 @@ int main()
     t.detach();
 
     //thread : input ==>> send
-    thread t1(sendToAll);
+    thread t1(serverMessage);
     t1.detach();
 
     //thread : recv ==>> show
