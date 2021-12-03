@@ -1,4 +1,5 @@
-// compile:  g++ -pthread Server.cpp -o Server
+//Nathan Farrar
+#define MYSQLPP_MYSQL_HEADERS_BURIED
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdio.h>
@@ -12,24 +13,36 @@
 #include <iostream>
 #include <thread>
 #include <list>
+#include <mysql++/mysql++.h>
 
-#define PORT 7000
+#define MYPORT 8080
+#define BUFFER_SIZE 1024
 #define IP "127.0.0.1"
 
 using namespace std;
 
-int s;
-struct sockaddr_in servaddr;
-socklen_t len;
-list<int> li;
+int id;
+struct sockaddr_in serverAddr;
+socklen_t length;
+list<int> activeConn;
 
-void getConn()
+mysqlpp::StoreQueryResult sendQuery(string data)
+{
+    mysqlpp::Connection myDB("cse278", "localhost", "cse278", "S3rul3z");
+    mysqlpp::Query query = myDB.query();
+    query << data;
+    query.parse();
+    return query.store();
+}
+
+void getConnection()
 {
     while (1)
     {
-        int conn = accept(s, (struct sockaddr *)&servaddr, &len);
-        li.push_back(conn);
-        printf("%d\n", conn);
+        int newConn = accept(id, (struct sockaddr *)&serverAddr, &length);
+        activeConn.push_back(newConn);
+        cout << "New Connection: Client #";
+        printf("%d\n", newConn);
     }
 }
 
@@ -42,16 +55,17 @@ void getData()
 
     while (1)
     {
+        //For every connection that is stored, iterate over all of them
+        //Check each connection for a message
         list<int>::iterator it;
-        for (it = li.begin(); it != li.end(); ++it)
+        for (it = activeConn.begin(); it != activeConn.end(); ++it)
         {
-            std::cout << *it;
             fd_set rfds;
             FD_ZERO(&rfds);
             int maxfd = 0;
             int retval = 0;
             FD_SET(*it, &rfds);
-            
+
             if (maxfd < *it)
             {
                 maxfd = *it;
@@ -67,26 +81,55 @@ void getData()
             }
             else
             {
-                char buf[1024];
+                char buf[BUFFER_SIZE];
                 memset(buf, 0, sizeof(buf));
                 int len = recv(*it, buf, sizeof(buf), 0);
+
+                //This prints the client's message on the server terminal
                 printf("%s", buf);
-                //now send it to everyone but the sender
-                //send(*it, buf, sizeof(buf), 0);
+
+                if (buf[0] == 'e' &&
+                    buf[1] == 'x' &&
+                    buf[2] == 'i' &&
+                    buf[3] == 't')
+                {
+                    cout << "Client #" << *it << " disconnected.\n";
+                    activeConn.erase(it--);
+                }
+                else
+                {
+                    try
+                    {
+                        //This sends the client's message to the database as a query
+                        mysqlpp::StoreQueryResult result = sendQuery(buf);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        //Catch an error
+                        cerr << e.what() << '\n';
+                        string temp = e.what();
+                        temp = temp + '\n';
+                        char buf[BUFFER_SIZE];
+                        strcpy(buf, temp.c_str());
+
+                        //Send the error back to the user
+                        send(*it, buf, sizeof(buf), 0);
+                    }
+                }
             }
         }
         sleep(1);
     }
 }
 
-void sendMess()
+void sendToAll()
 {
     while (1)
     {
-        char buf[1024];
+        char buf[BUFFER_SIZE];
         fgets(buf, sizeof(buf), stdin);
         list<int>::iterator it;
-        for (it = li.begin(); it != li.end(); ++it)
+        for (it = activeConn.begin(); it != activeConn.end(); ++it)
         {
             send(*it, buf, sizeof(buf), 0);
         }
@@ -95,38 +138,38 @@ void sendMess()
 
 int main()
 {
-    //Create the socket - ipv4 internet socket, TCP
-    s = socket(AF_INET, SOCK_STREAM, 0);
-    memset(&servaddr, 0, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(PORT);
-    servaddr.sin_addr.s_addr = inet_addr(IP);
+    //Create the socket for the connection number - ipv4 internet socket, TCP
+    id = socket(AF_INET, SOCK_STREAM, 0);
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(MYPORT);
+    serverAddr.sin_addr.s_addr = inet_addr(IP);
 
     //bind the socket with error checking
-    if (bind(s, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)
+    if (bind(id, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
     {
         perror("bind");
         exit(1);
     }
-    if (listen(s, 20) == -1)
+    if (listen(id, 20) == -1)
     {
         perror("listen");
         exit(1);
     }
-    len = sizeof(servaddr);
+    length = sizeof(serverAddr);
 
     //thread : while ==>> accpet
-    thread t(getConn);
+    thread t(getConnection);
     t.detach();
 
     //thread : input ==>> send
-    thread t1(sendMess);
+    thread t1(sendToAll);
     t1.detach();
 
     //thread : recv ==>> show
     thread t2(getData);
     t2.detach();
-    
+
     while (1)
     {
     }
