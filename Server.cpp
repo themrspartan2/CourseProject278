@@ -1,7 +1,7 @@
-//Nathan Farrar
+// Nathan Farrar
 #define MYSQLPP_MYSQL_HEADERS_BURIED
-#include <sys/types.h>
-#include <sys/socket.h>
+//#include <sys/types.h>
+//#include <sys/socket.h>
 #include <stdio.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -12,7 +12,6 @@
 #include <sys/shm.h>
 #include <iostream>
 #include <thread>
-#include <list>
 #include <mysql++/mysql++.h>
 #include <algorithm>
 
@@ -22,16 +21,16 @@
 
 using namespace std;
 
-//ID of current connection
+// ID of current connection
 int connID;
-//Server address
+// Server address
 struct sockaddr_in serverAddr;
-//Socket length
+// Socket length
 socklen_t length;
-//List of active connections
+// List of active connections
 list<int> activeConn;
 list<int> queuedConn;
-//Login database
+// Login database
 mysqlpp::Connection myDB("CourseProject", "localhost", "cse278", "S3rul3z");
 
 bool exitCheck(char buf[])
@@ -52,14 +51,14 @@ bool exitCheck(char buf[])
 
 void Login()
 {
-    //server checks for message every 2 seconds
+    // server checks for message every 2 seconds
     struct timeval tv;
     tv.tv_sec = 2;
     tv.tv_usec = 0;
 
     while (1)
     {
-        //check every queued connection for a username
+        // check every queued connection for a username
         list<int>::iterator it;
         for (it = queuedConn.begin(); it != queuedConn.end(); ++it)
         {
@@ -79,17 +78,17 @@ void Login()
             }
             else if (retval == 0)
             {
-                //No messages were recieved from this connection
+                // No messages were recieved from this connection
                 continue;
             }
             else
             {
-                //get sent a username from the user
+                // get sent a username from the user
                 char buf[BUFFER_SIZE];
                 memset(buf, 0, BUFFER_SIZE);
                 recv(*it, buf, BUFFER_SIZE, 0);
 
-                //If the message is /exit remove from the list of queued connections
+                // If the message is /exit remove from the list of queued connections
                 if (exitCheck(buf))
                 {
                     cout << "Qeueud Client #" << *it << " disconnected.\n";
@@ -97,24 +96,24 @@ void Login()
                     continue;
                 }
 
-                //This prints the client's username on the server terminal
+                // This prints the client's username on the server terminal
                 string username = buf;
                 username.erase(remove(username.begin(), username.end(), '\n'), username.end());
                 cout << "Login attempt for " + username << endl;
 
-                //find a user with that username and store the result
+                // find a user with that username and store the result
                 mysqlpp::Query login = myDB.query();
                 login << "SELECT * FROM Users WHERE Username = '%0';";
                 login.parse();
                 mysqlpp::StoreQueryResult result = login.store(username);
 
-                //if there is no result ask again, then move on
+                // if there is no result ask again, then move on
                 if (result.num_rows() == 0)
                 {
                     char response[BUFFER_SIZE] = "Username not found, try again: ";
-                    send(*it, buf, BUFFER_SIZE, 0);
+                    send(*it, response, BUFFER_SIZE, 0);
                 }
-                else //username was found
+                else // username was found
                 {
                     for (size_t row = 0; row < result.num_rows(); row++)
                     {
@@ -122,15 +121,15 @@ void Login()
                         cout << result[row][1].c_str() << endl;
                     }
 
-                    //if the username exists, ask for the password
+                    // if the username exists, ask for the password
                     char passBuf[BUFFER_SIZE] = "Enter your password: ";
                     send(*it, passBuf, BUFFER_SIZE, 0);
 
-                    //get the password from the user
+                    // get the password from the user
                     memset(passBuf, 0, BUFFER_SIZE);
                     recv(*it, passBuf, BUFFER_SIZE, 0);
 
-                    //if it is /exit, remove them
+                    // if it is /exit, remove them
                     if (exitCheck(passBuf))
                     {
                         cout << "Qeueud Client #" << *it << " disconnected.\n";
@@ -145,18 +144,24 @@ void Login()
                         char response[BUFFER_SIZE] = "Incorrect password. Re-enter username: ";
                         send(*it, response, BUFFER_SIZE, 0);
                     }
-                    else //login is successful
+                    else // login is successful!
                     {
+                        //add them to active user list
                         activeConn.push_back(*it);
-                        string newuser = username + " has joined the chat.";
+
+                        // remove them from queued user list
+                        queuedConn.erase(it--);
+
+                        //announce it to everyone
+                        string newuser = username + " has joined the chat.\n";
                         char announce[BUFFER_SIZE];
                         strcpy(announce, newuser.c_str());
-
                         list<int>::iterator it;
                         for (it = activeConn.begin(); it != activeConn.end(); ++it)
                         {
-                            send(*it, announce, sizeof(announce), 0);
+                            send(*it, announce, BUFFER_SIZE, 0);
                         }
+
                     }
                 }
             }
@@ -166,12 +171,12 @@ void Login()
         // list<int>::iterator it;
         // for (it = activeConn.begin(); it != activeConn.end(); ++it)
         // {
-        //size_t row = 0;
-        //string password = result[row][1].c_str();
-        //char announce[BUFFER_SIZE] = response[0][0].c_str();
+        // size_t row = 0;
+        // string password = result[row][1].c_str();
+        // char announce[BUFFER_SIZE] = response[0][0].c_str();
         // }
-        //cout << "New Connection: Client #";
-        //printf("%d\n", newConn);
+        // cout << "New Connection: Client #";
+        // printf("%d\n", newConn);
         sleep(1);
     }
 }
@@ -189,15 +194,15 @@ void getConnection()
 
 void getData()
 {
-    //server checks for message every 2 seconds
+    // server checks for message every 2 seconds
     struct timeval tv;
     tv.tv_sec = 2;
     tv.tv_usec = 0;
 
     while (1)
     {
-        //For every connection that is stored, iterate over all of them
-        //Check each connection for a message
+        // For every connection that is stored, iterate over all of them
+        // Check each connection for a message
         list<int>::iterator it;
         for (it = activeConn.begin(); it != activeConn.end(); ++it)
         {
@@ -217,25 +222,21 @@ void getData()
             }
             else if (retval == 0)
             {
-                //No messages were recieved from this connection
+                // No messages were recieved from this connection
             }
             else
             {
-                //This client sent a message
+                // This client sent a message
                 char buf[BUFFER_SIZE];
-                memset(buf, 0, sizeof(buf));
-                int len = recv(*it, buf, sizeof(buf), 0);
-                //This prints the client's message on the server terminal
+                memset(buf, 0, BUFFER_SIZE);
+                int len = recv(*it, buf, BUFFER_SIZE, 0);
+                // This prints the client's message on the server terminal
                 printf("%s", buf);
 
-                //If the message is /exit,
-                //remove the user from the list of active connections
-                //and announce their disconnection
-                if (buf[0] == '/' &&
-                    buf[1] == 'e' &&
-                    buf[2] == 'x' &&
-                    buf[3] == 'i' &&
-                    buf[4] == 't')
+                // If the message is /exit,
+                // remove the user from the list of active connections
+                // and announce their disconnection
+                if (exitCheck(buf))
                 {
                     cout << "Client #" << *it << " disconnected.\n";
                     activeConn.erase(it--);
@@ -246,7 +247,7 @@ void getData()
                     s = "Client #" + to_string(*it) + " said: " + s;
                     strcpy(buf, s.c_str());
 
-                    //Send this to everyone but the sender
+                    // Send this to everyone but the sender
                     list<int>::iterator it2;
                     for (it2 = activeConn.begin(); it2 != activeConn.end(); ++it2)
                     {
@@ -254,7 +255,7 @@ void getData()
                         {
                             continue;
                         }
-                        send(*it2, buf, sizeof(buf), 0);
+                        send(*it2, buf, BUFFER_SIZE, 0);
                     }
                 }
             }
@@ -268,25 +269,25 @@ void serverMessage()
     while (1)
     {
         char buf[BUFFER_SIZE];
-        fgets(buf, sizeof(buf), stdin);
+        fgets(buf, BUFFER_SIZE, stdin);
         list<int>::iterator it;
         for (it = activeConn.begin(); it != activeConn.end(); ++it)
         {
-            send(*it, buf, sizeof(buf), 0);
+            send(*it, buf, BUFFER_SIZE, 0);
         }
     }
 }
 
 int main()
 {
-    //Create the socket for the connection number - ipv4 internet socket, TCP
+    // Create the socket for the connection number - ipv4 internet socket, TCP
     connID = socket(AF_INET, SOCK_STREAM, 0);
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(MYPORT);
     serverAddr.sin_addr.s_addr = inet_addr(IP);
 
-    //bind the socket with error checking
+    // bind the socket with error checking
     if (bind(connID, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
     {
         perror("bind");
@@ -300,15 +301,15 @@ int main()
 
     length = sizeof(serverAddr);
 
-    //thread : while ==>> accpet
+    // thread : while ==>> accpet
     thread t(getConnection);
     t.detach();
 
-    //thread : input ==>> send
+    // thread : input ==>> send
     thread t1(serverMessage);
     t1.detach();
 
-    //thread : recv ==>> show
+    // thread : recv ==>> show
     thread t2(getData);
     t2.detach();
 
