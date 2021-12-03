@@ -14,6 +14,7 @@
 #include <thread>
 #include <list>
 #include <mysql++/mysql++.h>
+#include <algorithm>
 
 #define MYPORT 8080
 #define BUFFER_SIZE 1024
@@ -32,6 +33,22 @@ list<int> activeConn;
 list<int> queuedConn;
 //Login database
 mysqlpp::Connection myDB("CourseProject", "localhost", "cse278", "S3rul3z");
+
+bool exitCheck(char buf[])
+{
+    if (buf[0] == '/' &&
+        buf[1] == 'e' &&
+        buf[2] == 'x' &&
+        buf[3] == 'i' &&
+        buf[4] == 't')
+    {
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
 
 void Login()
 {
@@ -68,18 +85,12 @@ void Login()
             else
             {
                 //get sent a username from the user
-                char ubuf[BUFFER_SIZE];
-                memset(ubuf, 0, sizeof(ubuf));
-                recv(*it, ubuf, sizeof(ubuf), 0);
+                char buf[BUFFER_SIZE];
+                memset(buf, 0, BUFFER_SIZE);
+                recv(*it, buf, BUFFER_SIZE, 0);
 
-                //If the message is /exit,
-                //remove the user from the list of active connections
-                //and announce their disconnection
-                if (ubuf[0] == '/' &&
-                    ubuf[1] == 'e' &&
-                    ubuf[2] == 'x' &&
-                    ubuf[3] == 'i' &&
-                    ubuf[4] == 't')
+                //If the message is /exit remove from the list of queued connections
+                if (exitCheck(buf))
                 {
                     cout << "Qeueud Client #" << *it << " disconnected.\n";
                     queuedConn.erase(it--);
@@ -87,51 +98,57 @@ void Login()
                 }
 
                 //This prints the client's username on the server terminal
-                cout << "Login attempt for ";
-                cout << ubuf;
+                string username = buf;
+                username.erase(remove(username.begin(), username.end(), '\n'), username.end());
+                cout << "Login attempt for " + username << endl;
 
                 //find a user with that username and store the result
                 mysqlpp::Query login = myDB.query();
                 login << "SELECT * FROM Users WHERE Username = '%0';";
                 login.parse();
-                mysqlpp::StoreQueryResult result = login.store("Nathan");
-
-                cout << result.num_rows() << endl;
-
-                for (size_t row = 0; row < result.num_rows(); row++)
-                {
-                    string username = result[row][0].c_str();
-                    string password = result[row][1].c_str();
-                    cout << username << endl
-                         << password << endl;
-                }
+                mysqlpp::StoreQueryResult result = login.store(username);
 
                 //if there is no result ask again, then move on
                 if (result.num_rows() == 0)
                 {
-                    char response[BUFFER_SIZE] = "Username does not exist, try again.\n";
-                    send(*it, response, sizeof(response), 0);
+                    char response[BUFFER_SIZE] = "Username not found, try again: ";
+                    send(*it, buf, BUFFER_SIZE, 0);
                 }
-                else
+                else //username was found
                 {
-                    //if the username exists, ask for the password
-                    char pbuf[BUFFER_SIZE] = "Enter your password: ";
-                    send(*it, pbuf, sizeof(pbuf), 0);
-                    //get the password from the user
-                    memset(pbuf, 0, sizeof(pbuf));
-                    recv(*it, pbuf, sizeof(pbuf), 0);
-
-                    string s(pbuf);
-                    if (s != result[0][1].c_str())
+                    for (size_t row = 0; row < result.num_rows(); row++)
                     {
-                        char response[BUFFER_SIZE] = "Incorrect password.\n";
-                        send(*it, response, sizeof(response), 0);
+                        cout << result[row][0].c_str() << endl;
+                        cout << result[row][1].c_str() << endl;
                     }
-                    else
+
+                    //if the username exists, ask for the password
+                    char passBuf[BUFFER_SIZE] = "Enter your password: ";
+                    send(*it, passBuf, BUFFER_SIZE, 0);
+
+                    //get the password from the user
+                    memset(passBuf, 0, BUFFER_SIZE);
+                    recv(*it, passBuf, BUFFER_SIZE, 0);
+
+                    //if it is /exit, remove them
+                    if (exitCheck(passBuf))
+                    {
+                        cout << "Qeueud Client #" << *it << " disconnected.\n";
+                        queuedConn.erase(it--);
+                        continue;
+                    }
+
+                    string password(passBuf);
+                    password.erase(remove(password.begin(), password.end(), '\n'), password.end());
+                    if (password != result[0][1].c_str())
+                    {
+                        char response[BUFFER_SIZE] = "Incorrect password. Re-enter username: ";
+                        send(*it, response, BUFFER_SIZE, 0);
+                    }
+                    else //login is successful
                     {
                         activeConn.push_back(*it);
-                        string newuser = result[0][0].c_str();
-                        newuser = newuser + " has joined.\n";
+                        string newuser = username + " has joined the chat.";
                         char announce[BUFFER_SIZE];
                         strcpy(announce, newuser.c_str());
 
@@ -150,7 +167,7 @@ void Login()
         // for (it = activeConn.begin(); it != activeConn.end(); ++it)
         // {
         //size_t row = 0;
-        //string s = result[row][1].c_str();
+        //string password = result[row][1].c_str();
         //char announce[BUFFER_SIZE] = response[0][0].c_str();
         // }
         //cout << "New Connection: Client #";

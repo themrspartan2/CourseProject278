@@ -47,7 +47,7 @@ int main(int argc, char const *argv[])
     }
 
     cout << "Connection established. Type /exit to disconnect." << endl;
-    //cout << "Please enter your username: " << flush;
+    cout << "Enter your username: " << flush;
 
     while (1)
     {
@@ -82,10 +82,9 @@ int main(int argc, char const *argv[])
             if (FD_ISSET(connID, &rfds))
             {
                 char recvbuf[BUFFER_SIZE];
-                int len;
-                len = recv(connID, recvbuf, sizeof(recvbuf), 0);
-                printf("%s", recvbuf);
                 memset(recvbuf, 0, sizeof(recvbuf));
+                recv(connID, recvbuf, sizeof(recvbuf), 0);
+                cout << recvbuf << flush;
             }
 
             //When the user enters information, process the information and send it.
@@ -95,7 +94,6 @@ int main(int argc, char const *argv[])
                 memset(sendbuf, 0, sizeof(sendbuf));
                 fgets(sendbuf, sizeof(sendbuf), stdin);
                 send(connID, sendbuf, strlen(sendbuf), 0);
-
                 //if the message is "/exit" then end the connection
                 if (sendbuf[0] == '/' &&
                     sendbuf[1] == 'e' &&
