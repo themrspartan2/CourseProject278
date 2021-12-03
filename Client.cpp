@@ -19,57 +19,35 @@
 
 using namespace std;
 
-void exitPrompt()
-{
-    while (1)
-    {
-        char buf[BUFFER_SIZE];
-        fgets(buf, sizeof(buf), stdin);
-        if (buf == "/exit")
-        {
-            exit(0);
-        }
-    }
-}
-
 int main(int argc, char const *argv[])
 {
     //set up the socket
-    int sock_cli;
-    fd_set rfds;
-    struct timeval tv;
-    int retval, maxfd;
-    sock_cli = socket(AF_INET, SOCK_STREAM, 0);
+    int connID;
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(MYPORT);                 //server port
     serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1"); //server ip
+    connID = socket(AF_INET, SOCK_STREAM, 0);
+
+    //setting timeout time
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+
+    fd_set rfds;
+    int maxfd, retval;
 
     //connect to the server
     //0 = success, -1 = error
-    if (connect(sock_cli, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
+    if (connect(connID, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
     {
         perror("connect");
         exit(1);
     }
 
-    //verify login
-    //Get your username and password
-    bool loggedIn = false;
-
-    while (loggedIn == false)
-    {
-        string username, password;
-        cout << "Enter username: ";
-        cin >> username;
-        cout << "Enter password: ";
-        cin >> password;
-        loggedIn = true;
-    }
-
-    cout << "Connection established." << endl
-         << "Type /exit to disconnect.\n";
+    cout << "Connection established. Type /exit to disconnect." << endl;
+    //cout << "Please enter your username: " << flush;
 
     while (1)
     {
@@ -79,16 +57,12 @@ int main(int argc, char const *argv[])
         FD_SET(0, &rfds);
         maxfd = 0;
         //add the currently connected file descriptor to the collection
-        FD_SET(sock_cli, &rfds);
+        FD_SET(connID, &rfds);
         //find the largest file descriptor in the file descriptor set
-        if (maxfd < sock_cli)
+        if (maxfd < connID)
         {
-            maxfd = sock_cli;
+            maxfd = connID;
         }
-
-        //setting timeout time
-        tv.tv_sec = 5;
-        tv.tv_usec = 0;
 
         //waiting for message
         retval = select(maxfd + 1, &rfds, NULL, NULL, &tv);
@@ -100,16 +74,16 @@ int main(int argc, char const *argv[])
         else if (retval == 0)
         {
             //waiting for input from the client
-            continue;
+            //continue;
         }
         else
         {
             //The server sent a message.
-            if (FD_ISSET(sock_cli, &rfds))
+            if (FD_ISSET(connID, &rfds))
             {
                 char recvbuf[BUFFER_SIZE];
                 int len;
-                len = recv(sock_cli, recvbuf, sizeof(recvbuf), 0);
+                len = recv(connID, recvbuf, sizeof(recvbuf), 0);
                 printf("%s", recvbuf);
                 memset(recvbuf, 0, sizeof(recvbuf));
             }
@@ -118,7 +92,9 @@ int main(int argc, char const *argv[])
             if (FD_ISSET(0, &rfds))
             {
                 char sendbuf[BUFFER_SIZE];
+                memset(sendbuf, 0, sizeof(sendbuf));
                 fgets(sendbuf, sizeof(sendbuf), stdin);
+                send(connID, sendbuf, strlen(sendbuf), 0);
 
                 //if the message is "/exit" then end the connection
                 if (sendbuf[0] == '/' &&
@@ -127,20 +103,16 @@ int main(int argc, char const *argv[])
                     sendbuf[3] == 'i' &&
                     sendbuf[4] == 't')
                 {
-                    send(sock_cli, sendbuf, strlen(sendbuf), 0);
                     cout << "Connection terminated.\n";
-                    close(sock_cli);
+                    close(connID);
                     return 0;
                 }
-
-                send(sock_cli, sendbuf, strlen(sendbuf), 0); //Send out
-                memset(sendbuf, 0, sizeof(sendbuf));
             }
         }
     }
 
-    cout << "Connection terminated.\n";
-    close(sock_cli);
+    cout << "Connection terminated unexpectedly.\n";
+    close(connID);
 
     return 0;
 }
