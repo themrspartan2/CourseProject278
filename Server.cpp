@@ -1,7 +1,12 @@
 // Nathan Farrar
+
 #define MYSQLPP_MYSQL_HEADERS_BURIED
-//#include <sys/types.h>
-//#include <sys/socket.h>
+#define MYPORT 8080
+#define BUFFER_SIZE 1024
+#define IP "127.0.0.1"
+
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <stdio.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -9,15 +14,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <sys/shm.h>
 #include <iostream>
 #include <thread>
 #include <mysql++/mysql++.h>
 #include <algorithm>
-
-#define MYPORT 8080
-#define BUFFER_SIZE 1024
-#define IP "127.0.0.1"
 
 using namespace std;
 
@@ -28,11 +28,13 @@ struct sockaddr_in serverAddr;
 // Socket length
 socklen_t length;
 // List of active connections
-list<int> activeConn;
+list<pair<int, string>> activeConn;
+// List of queued connections
 list<int> queuedConn;
 // Login database
 mysqlpp::Connection myDB("CourseProject", "localhost", "cse278", "S3rul3z");
 
+// helper which determines whether the user is trying to close the program
 bool exitCheck(char buf[])
 {
     if (buf[0] == '/' &&
@@ -49,6 +51,20 @@ bool exitCheck(char buf[])
     }
 }
 
+// establishes basic connection to clients
+void getConnection()
+{
+    while (1)
+    {
+        int newConn = accept(connID, (struct sockaddr *)&serverAddr, &length);
+        queuedConn.push_back(newConn);
+        cout << "Queued Connection: Client #";
+        printf("%d\n", newConn);
+    }
+}
+
+// takes users that have connected and makes them verify account information
+// users cannot participate in the chatroom until they have made it past this
 void Login()
 {
     // server checks for message every 2 seconds
@@ -115,12 +131,6 @@ void Login()
                 }
                 else // username was found
                 {
-                    for (size_t row = 0; row < result.num_rows(); row++)
-                    {
-                        cout << result[row][0].c_str() << endl;
-                        cout << result[row][1].c_str() << endl;
-                    }
-
                     // if the username exists, ask for the password
                     char passBuf[BUFFER_SIZE] = "Enter your password: ";
                     send(*it, passBuf, BUFFER_SIZE, 0);
@@ -146,52 +156,61 @@ void Login()
                     }
                     else // login is successful!
                     {
-                        //add them to active user list
-                        activeConn.push_back(*it);
+                        // add them to active user list
+                        activeConn.push_back(pair<int, string>(*it, username));
 
                         // remove them from queued user list
                         queuedConn.erase(it--);
 
-                        //announce it to everyone
+                        // announce it to everyone
                         string newuser = username + " has joined the chat.\n";
                         char announce[BUFFER_SIZE];
                         strcpy(announce, newuser.c_str());
-                        list<int>::iterator it;
+                        list<pair<int, string>>::iterator it;
                         for (it = activeConn.begin(); it != activeConn.end(); ++it)
                         {
-                            send(*it, announce, BUFFER_SIZE, 0);
+                            send(it->first, announce, BUFFER_SIZE, 0);
                         }
-
                     }
                 }
             }
         }
-
-        // activeConn.push_back(newConn);
-        // list<int>::iterator it;
-        // for (it = activeConn.begin(); it != activeConn.end(); ++it)
-        // {
-        // size_t row = 0;
-        // string password = result[row][1].c_str();
-        // char announce[BUFFER_SIZE] = response[0][0].c_str();
-        // }
-        // cout << "New Connection: Client #";
-        // printf("%d\n", newConn);
         sleep(1);
     }
 }
 
-void getConnection()
+void directMessage(string sender, char buf[])
 {
-    while (1)
+    int i = 1;
+    string recipient;
+    string s = buf;
+    while (!isspace(s[i]))
     {
-        int newConn = accept(connID, (struct sockaddr *)&serverAddr, &length);
-        queuedConn.push_back(newConn);
-        cout << "Queued Connection: Client #";
-        printf("%d\n", newConn);
+        recipient = recipient + s[i];
+        i++;
+    }
+
+    // format the message and convert it back to buffer
+    size_t pos = s.find(recipient);
+    if (pos != string::npos)
+    {
+        s.erase(pos - 1, recipient.length() + 1);
+    }
+    s = "(Direct) " + sender + ": " + s;
+    memset(buf, 0, BUFFER_SIZE);
+    strcpy(buf, s.c_str());
+
+    list<pair<int, string>>::iterator it;
+    for (it = activeConn.begin(); it != activeConn.end(); ++it)
+    {
+        if (it->second == recipient)
+        {
+            send(it->first, buf, BUFFER_SIZE, 0);
+        }
     }
 }
 
+// listens for data from clients and sends it to everyone else in the chatroom
 void getData()
 {
     // server checks for message every 2 seconds
@@ -203,17 +222,17 @@ void getData()
     {
         // For every connection that is stored, iterate over all of them
         // Check each connection for a message
-        list<int>::iterator it;
+        list<pair<int, string>>::iterator it;
         for (it = activeConn.begin(); it != activeConn.end(); ++it)
         {
             fd_set rfds;
             FD_ZERO(&rfds);
             int maxfd, retval;
-            FD_SET(*it, &rfds);
+            FD_SET(it->first, &rfds);
 
-            if (maxfd < *it)
+            if (maxfd < it->first)
             {
-                maxfd = *it;
+                maxfd = it->first;
             }
             retval = select(maxfd + 1, &rfds, NULL, NULL, &tv);
             if (retval == -1)
@@ -229,33 +248,46 @@ void getData()
                 // This client sent a message
                 char buf[BUFFER_SIZE];
                 memset(buf, 0, BUFFER_SIZE);
-                int len = recv(*it, buf, BUFFER_SIZE, 0);
-                // This prints the client's message on the server terminal
+                int len = recv(it->first, buf, BUFFER_SIZE, 0);
+                // This optionally prints the client's message on the server terminal if you want
+                cout << it->second + ": ";
                 printf("%s", buf);
 
-                // If the message is /exit,
-                // remove the user from the list of active connections
-                // and announce their disconnection
+                // If the message is /exit
                 if (exitCheck(buf))
                 {
-                    cout << "Client #" << *it << " disconnected.\n";
-                    activeConn.erase(it--);
+                    string s = it->second + " disconnected.\n";
+                    activeConn.erase(it--); // remove from active list
+
+                    memset(buf, 0, BUFFER_SIZE); // announce the disconnect
+                    strcpy(buf, s.c_str());
+                    list<pair<int, string>>::iterator it2;
+                    for (it2 = activeConn.begin(); it2 != activeConn.end(); ++it2)
+                    {
+                        send(it2->first, buf, BUFFER_SIZE, 0);
+                    }
+                }
+                else if (buf[0] == '/')
+                {
+                    directMessage(it->second, buf);
+                    continue;
                 }
                 else
                 {
+                    // convert to buffer
                     string s(buf);
-                    s = "Client #" + to_string(*it) + " said: " + s;
+                    s = it->second + ": " + s;
                     strcpy(buf, s.c_str());
 
-                    // Send this to everyone but the sender
-                    list<int>::iterator it2;
+                    // send the message to everyone but the sender
+                    list<pair<int, string>>::iterator it2;
                     for (it2 = activeConn.begin(); it2 != activeConn.end(); ++it2)
                     {
                         if (it == it2)
                         {
                             continue;
                         }
-                        send(*it2, buf, BUFFER_SIZE, 0);
+                        send(it2->first, buf, BUFFER_SIZE, 0);
                     }
                 }
             }
@@ -264,20 +296,29 @@ void getData()
     }
 }
 
+// send a message as the server admin to all clients
 void serverMessage()
 {
     while (1)
     {
         char buf[BUFFER_SIZE];
         fgets(buf, BUFFER_SIZE, stdin);
-        list<int>::iterator it;
+
+        // exit management
+        if (exitCheck(buf))
+        {
+            exit(0);
+        }
+
+        list<pair<int, string>>::iterator it;
         for (it = activeConn.begin(); it != activeConn.end(); ++it)
         {
-            send(*it, buf, BUFFER_SIZE, 0);
+            send(it->first, buf, BUFFER_SIZE, 0);
         }
     }
 }
 
+// sets up the socket and creates threads for different tasks
 int main()
 {
     // Create the socket for the connection number - ipv4 internet socket, TCP
