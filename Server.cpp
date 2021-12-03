@@ -34,6 +34,7 @@ list<int> queuedConn;
 // Login database
 mysqlpp::Connection myDB("CourseProject", "localhost", "cse278", "S3rul3z");
 
+// helper which determines whether the user is trying to close the program
 bool exitCheck(char buf[])
 {
     if (buf[0] == '/' &&
@@ -50,6 +51,20 @@ bool exitCheck(char buf[])
     }
 }
 
+// establishes basic connection to clients
+void getConnection()
+{
+    while (1)
+    {
+        int newConn = accept(connID, (struct sockaddr *)&serverAddr, &length);
+        queuedConn.push_back(newConn);
+        cout << "Queued Connection: Client #";
+        printf("%d\n", newConn);
+    }
+}
+
+// takes users that have connected and makes them verify account information
+// users cannot participate in the chatroom until they have made it past this
 void Login()
 {
     // server checks for message every 2 seconds
@@ -151,7 +166,7 @@ void Login()
                         string newuser = username + " has joined the chat.\n";
                         char announce[BUFFER_SIZE];
                         strcpy(announce, newuser.c_str());
-                        list<pair<int,string>>::iterator it;
+                        list<pair<int, string>>::iterator it;
                         for (it = activeConn.begin(); it != activeConn.end(); ++it)
                         {
                             send(it->first, announce, BUFFER_SIZE, 0);
@@ -164,17 +179,7 @@ void Login()
     }
 }
 
-void getConnection()
-{
-    while (1)
-    {
-        int newConn = accept(connID, (struct sockaddr *)&serverAddr, &length);
-        queuedConn.push_back(newConn);
-        cout << "Queued Connection: Client #";
-        printf("%d\n", newConn);
-    }
-}
-
+// listens for data from clients and sends it to everyone else in the chatroom
 void getData()
 {
     // server checks for message every 2 seconds
@@ -213,24 +218,32 @@ void getData()
                 char buf[BUFFER_SIZE];
                 memset(buf, 0, BUFFER_SIZE);
                 int len = recv(it->first, buf, BUFFER_SIZE, 0);
-                // This prints the client's message on the server terminal
+                // This optionally prints the client's message on the server terminal if you want
+                cout << it->second + ": ";
                 printf("%s", buf);
 
-                // If the message is /exit,
-                // remove the user from the list of active connections
-                // and announce their disconnection
+                // If the message is /exit
                 if (exitCheck(buf))
                 {
-                    cout << it->second << " disconnected.\n";
-                    activeConn.erase(it--);
+                    string s = it->second + " disconnected.\n";
+                    activeConn.erase(it--); // remove from active list
+
+                    memset(buf, 0, BUFFER_SIZE); // announce the disconnect
+                    strcpy(buf, s.c_str());
+                    list<pair<int, string>>::iterator it2;
+                    for (it2 = activeConn.begin(); it2 != activeConn.end(); ++it2)
+                    {
+                        send(it2->first, buf, BUFFER_SIZE, 0);
+                    }
                 }
                 else
                 {
+                    // convert to buffer
                     string s(buf);
-                    s = it->second + " said: " + s;
+                    s = it->second + ": " + s;
                     strcpy(buf, s.c_str());
 
-                    // Send this to everyone but the sender
+                    // send the message to everyone but the sender
                     list<pair<int, string>>::iterator it2;
                     for (it2 = activeConn.begin(); it2 != activeConn.end(); ++it2)
                     {
@@ -247,6 +260,7 @@ void getData()
     }
 }
 
+// send a message as the server admin to all clients
 void serverMessage()
 {
     while (1)
@@ -261,6 +275,7 @@ void serverMessage()
     }
 }
 
+// sets up the socket and creates threads for different tasks
 int main()
 {
     // Create the socket for the connection number - ipv4 internet socket, TCP
